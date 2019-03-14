@@ -1,5 +1,6 @@
 import RPi.GPIO as GPIO
 import time
+import pickle
 from Passcodes import PermanentPasscode, OneTimePasscode, TemporaryPasscode, RepeatPasscode
 
 class Controller:
@@ -7,11 +8,42 @@ class Controller:
     def __init__(self):
         self.passcodeLength = 4
         self.passcodes = []
-        self.passcodes.append(PermanentPasscode('1234'))
-        self.passcodes.append(OneTimePasscode('5678'))
-        self.passcodes.append(TemporaryPasscode('1357', time.time(), time.time()+60))
-        self.passcodes.append(RepeatPasscode('2468', 0, (12+7)*3600+36*60, [False, False, False, True, False, False, True]))
+        #self.passcodes.append(PermanentPasscode('1234'))
+        #self.passcodes.append(OneTimePasscode('5678'))
+        #self.passcodes.append(TemporaryPasscode('1357', time.time(), time.time()+60))
+        #self.passcodes.append(RepeatPasscode('2468', 0, (12+7)*3600+36*60, [False, False, False, True, False, False, True]))
+        self.readPasscodes()
         
+    def readPasscodes(self):
+        file = open("Passcode-data.dat", "rb")
+        self.passcodes = pickle.load(file)
+        file.close()
+
+    def writePasscodes(self):
+        file = open("Passcode-data.dat", "wb")
+        pickle.dump(self.passcodes, file)
+        file.close()
+
+    def addPasscode(self, passcode):
+        self.passcodes.append(passcode)
+        self.writePasscodes()
+
+    def removePasscode(self, passcode):
+        self.passcodes.remove(passcode)
+        self.writePasscodes()
+
+    def changePasscode(self, oldPasscode, newPasscode):
+        self.removePasscode(oldPasscode)
+        self.addPasscode(newPasscode)
+        self.writePasscodes()
+
+    def updatePasscodes(self, newPasscodes):
+        self.passcodes = newPasscodes
+        self.writePasscodes()
+
+    def clearPasscodes(self):
+        self.passcodes = []
+        self.writePasscodes()
 
     def lock(self):
         servoPIN = 23

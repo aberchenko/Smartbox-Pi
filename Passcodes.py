@@ -5,6 +5,9 @@ class PermanentPasscode:
     def __init__(self, passcode):
         self.passcode = passcode
 
+    def getType(self):
+        return "PERMANENT"
+
     def getPasscode(self):
         return self.passcode
 
@@ -13,12 +16,21 @@ class PermanentPasscode:
 
     def use(self):
         return
+
+    def __eq__(self, other):
+        return self.getType() == other.getType() and self.getPasscode() == other.getPasscode()
+
+    def __ne__(self, other):
+        return self != other
         
 class OneTimePasscode:
 
     def __init__(self, passcode):
         self.passcode = passcode
         self.used = False
+
+    def getType(self):
+        return "ONETIME"
 
     def getPasscode(self):
         return self.passcode
@@ -29,12 +41,21 @@ class OneTimePasscode:
     def use(self):
         self.used = True
 
+    def __eq__(self, other):
+        return self.getType() == other.getType() and self.getPasscode() == other.getPasscode()
+
+    def __ne__(self, other):
+        return self != other
+
 class TemporaryPasscode:
 
     def __init__(self, passcode, startTime, endTime):
         self.passcode = passcode
         self.startTime = startTime
         self.endTime = endTime
+
+    def getType(self):
+        return "TEMPORARY"
 
     def getPasscode(self):
         return self.passcode
@@ -45,6 +66,12 @@ class TemporaryPasscode:
     def use(self):
         return
 
+    def __eq__(self, other):
+        return self.getType() == other.getType() and self.getPasscode() == other.getPasscode()
+
+    def __ne__(self, other):
+        return self != other
+
 class RepeatPasscode:
 
     def __init__(self, passcode, startTime, endTime, days):
@@ -54,6 +81,9 @@ class RepeatPasscode:
         self.startTime = startTime
         self.endTime = endTime
         self.days = days
+
+    def getType(self):
+        return "REPEAT"
 
     def getPasscode(self):
         return self.passcode
@@ -68,4 +98,10 @@ class RepeatPasscode:
 
     def use(self):
         return
+
+    def __eq__(self, other):
+        return self.getType() == other.getType() and self.getPasscode() == other.getPasscode()
+
+    def __ne__(self, other):
+        return self != other
 
