@@ -105,3 +105,48 @@ class RepeatPasscode:
     def __ne__(self, other):
         return self != other
 
+class IncorrectPasscode:
+
+    def __init__(self, passcode):
+        self.passcode = passcode
+
+    def getType(self):
+        return "INCORRECT"
+
+    def getPasscode(self):
+        return self.passcode
+
+    def isActive(self, time):
+        return False
+
+    def use(self):
+        return
+
+    def __eq__(self, other):
+        return self.getType() == other.getType() and self.getPasscode() == other.getPasscode()
+
+    def __ne__(self, other):
+        return self != other
+
+class PhoneUnlock:
+
+    def __init(self):
+        self.passcode = "0"
+
+    def getType(self):
+        return "PHONE"
+
+    def getPasscode(self):
+        return self.passcode
+
+    def isActive(self, time):
+        return False
+
+    def use(self):
+        return
+
+    def __eq__(self, other):
+        return self.getType() == other.getType() and self.getPasscode() == other.getPasscode()
+
+    def __ne__(self, other):
+        return self != other      
