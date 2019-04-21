@@ -3,6 +3,7 @@ import time
 import base64
 import requests
 import pickle
+import bcrypt
 from threading import Thread
 from Passcodes import *#PermanentPasscode, OneTimePasscode, TemporaryPasscode, RepeatPasscode, IncorrectPasscode
 
@@ -17,22 +18,44 @@ SECRET = "password1234"
 class Controller:
 
     def __init__(self):
-        self.passcodeLength = 4
+        self.passcodeLength = 6
         self.passcodes = []
+        self.otpasscodes = []
         self.uses = []
         self.checkingBackendStatus = False
+        #self.readLockID()
         #self.passcodes.append(PermanentPasscode('1234'))
         #self.passcodes.append(OneTimePasscode('5678'))
         #self.passcodes.append(TemporaryPasscode('1357', time.time(), time.time()+60))
         #self.passcodes.append(RepeatPasscode('2468', 0, (12+7)*3600+36*60, [False, False, False, True, False, False, True]))
-        self.readPasscodes()
-        self.readUses()
-        oneCode = OneTimePasscode('5678')
-        tempCode = TemporaryPasscode('1357', time.time(), time.time()+60)
+        self.writePasscodes()
+        self.writeUses()
+        self.addPasscode(PermanentPasscode(self.hash_passcode('123456')))
+        oneCode = OneTimePasscode(self.hash_passcode('567890'))
+        tempCode = TemporaryPasscode(self.hash_passcode('135791'), time.time(), time.time()+60)
         self.removePasscode(tempCode)
         self.addPasscode(tempCode)
         self.removePasscode(oneCode)
         self.addPasscode(oneCode)
+
+    def hash_passcode(self, password):
+        if isinstance(password, str):
+            password = bytes(password, 'utf-8')
+        hashedpw = str(bcrypt.hashpw(password, bcrypt.gensalt()), 'utf-8')
+        return hashedpw
+    
+    def readLockID(self):
+        file = open("LockID.dat", "rb")
+        stuff = pickle.load(file)
+        LOCK_ID = stuff[0]
+        SECRET = stuff[1]
+        file.close()
+
+    def writeLockID(self):
+        file = open("LockID.dat", "wb")
+        stuff = [LOCK_ID, SECRET]
+        pickle.dump(stuff, file)
+        file.close()
 
     def readUses(self):
         file = open("Usage-data.dat", "rb")
@@ -46,20 +69,28 @@ class Controller:
         
     def readPasscodes(self):
         file = open("Passcode-data.dat", "rb")
-        self.passcodes = pickle.load(file)
+        data = pickle.load(file)
+        self.passcodes = data[0]
+        self.otpasscodes = data[1]
         file.close()
 
     def writePasscodes(self):
         file = open("Passcode-data.dat", "wb")
-        pickle.dump(self.passcodes, file)
+        pickle.dump([self.passcodes, self.otpasscodes], file)
         file.close()
 
     def addPasscode(self, passcode):
-        self.passcodes.append(passcode)
+        if passcode.getType() == 'ONETIME':
+            self.otpasscodes.append(passcode)
+        else:
+            self.passcodes.append(passcode)
         self.writePasscodes()
 
     def removePasscode(self, passcode):
-        self.passcodes.remove(passcode)
+        if passcode in self.passcodes:
+            self.passcodes.remove(passcode)
+        elif passcode in self.otpasscodes:
+            self.otpasscodes.remove(passcode)
         self.writePasscodes()
 
     def changePasscode(self, oldPasscode, newPasscode):
@@ -67,12 +98,14 @@ class Controller:
         self.addPasscode(newPasscode)
         self.writePasscodes()
 
-    def updatePasscodes(self, newPasscodes):
+    def updatePasscodes(self, newPasscodes, newOTPasscodes):
         self.passcodes = newPasscodes
+        self.otpasscodes = newOTPasscodes
         self.writePasscodes()
 
     def clearPasscodes(self):
         self.passcodes = []
+        self.otpasscodes = []
         self.writePasscodes()
 
     def lock(self):
@@ -91,6 +124,7 @@ class Controller:
         p.stop()
 
         self.writeBackendStatus("CLOSED")
+        self.registerEvent('HARDWARE_LOCK_CLOSED')
 
     def unlock(self):
         servoPIN = 23
@@ -108,6 +142,7 @@ class Controller:
         p.stop()
 
         self.writeBackendStatus("OPEN")
+        self.registerEvent('HARDWARE_LOCK_OPENED')
 
     def writeBackendStatus(self, status):
         # Base 64 encode the lock id and secret
@@ -128,6 +163,8 @@ class Controller:
 
     def checkBackendStatus(self):
         # Base 64 encode the lock id and secret
+        print(LOCK_ID)
+        print(SECRET)
         user_pass = base64.b64encode(
             "{}:{}".format(LOCK_ID, SECRET).encode()).decode('ascii')
         response = requests.get(
@@ -147,6 +184,73 @@ class Controller:
                 self.writeUses()
 
         self.checkingBackendStatus = False
+
+    def registerEvent(self, event):
+        # Base 64 encode the lock id and secret
+        user_pass = base64.b64encode(
+            "{}:{}".format(LOCK_ID, SECRET).encode()).decode('ascii')
+        response = requests.put(
+            URL + '/api/v1/hardware/events',
+            json={
+                'event': event,
+            },
+            headers={
+                'Authorization': 'Basic ' + user_pass,
+            },
+        )
+
+    def getBackendPasswords(self):
+         # Base 64 encode the lock id and secret
+        print(LOCK_ID)
+        print(SECRET)
+        user_pass = base64.b64encode(
+            "{}:{}".format(LOCK_ID, SECRET).encode()).decode('ascii')
+        response = requests.get(
+            URL + '/api/v1/hardware/sync',
+            headers={
+                'Authorization': 'Basic ' + user_pass,
+            },
+        )
+        if response.status_code == 200: 
+            otp = response.json()['otp']
+            unlimited = response.json()['permanent']
+
+            self.clearPasscodes()
+
+            for pw in otp:
+                hashed = pw['hashedPassword']
+                self.addPasscode(OneTimePasscode(hashed))
+            for pw in unlimited:
+                hashed = pw['hashedPassword']
+                expiration = pw['expiration']
+                if expiration != -1:
+                    creation = pw['createdAt']
+                    self.addPasscode(TemporaryPasscode(hashed, creation, expiration))
+                else:
+                    activeDays = pw['activeDays']
+                    if activeDays == []:
+                        self.addPasscode(PermanentPasscode(hashed))
+                    else:
+                        days = [False,False,False,False,False,False,False]
+                        if 'MONDAY' in activeDays:
+                            days[0] = True
+                        if 'TUESDAY' in activeDays:
+                            days[1] = True
+                        if 'WEDNESDAY' in activeDays:
+                            days[2] = True
+                        if 'THURSDAY' in activeDays:
+                            days[3] = True
+                        if 'FRIDAY' in activeDays:
+                            days[4] = True
+                        if 'SATURDAY' in activeDays:
+                            days[5] = True
+                        if 'SUNDAY' in activeDays:
+                            days[6] = True
+
+                        activeTimes = pw['activeTimes']
+                        if activeTimes == []:
+                            self.addPasscode(RepeatPasscode(hashed, 0, 24*3600, days))
+                
 
     def waitForPasscode(self):
         GPIO.setmode(GPIO.BCM)
@@ -202,6 +306,9 @@ class Controller:
                             thread = Thread(target = self.checkBackendStatus, args = [])
                             thread.start()
 
+                            thread2 = Thread(target = self.getBackendPasswords, args = [])
+                            thread2.start()
+
                     GPIO.output(COL[j], 1)
         except KeyboardInterrupt:
             print("Cleaning")
@@ -210,7 +317,7 @@ class Controller:
     def checkValid(self, attempt):
         for passcode in self.passcodes:
             if passcode.isActive(time.time()):
-                if attempt == passcode.getPasscode():
+                if self.validateAttempt(passcode.getPasscode(), attempt):
                     passcode.use()
                     self.writePasscodes()
                     self.uses.append(Usage(passcode, time.time()))
@@ -218,10 +325,28 @@ class Controller:
                     
                     print("Unlock")
                     self.unlock()
-                    #return True
+                    return
+        for passcode in self.otpasscodes:
+            if passcode.isActive(time.time()):
+                if self.validateAttempt(passcode.getPasscode(), attempt):
+                    passcode.use()
+                    self.writePasscodes()
+                    self.uses.append(Usage(passcode, time.time()))
+                    self.writeUses()
+                    
+                    print("Unlock")
+                    self.unlock()
+                    return
         self.uses.append(Usage(IncorrectPasscode(attempt), time.time()))
         self.writeUses()
-        #return False
+        return
+
+    def validateAttempt(self, hashed, attempt):
+        if isinstance(attempt, str):
+            attempt = bytes(attempt, 'utf-8')
+        if isinstance(hashed, str):
+            hashed = bytes(hashed, 'utf-8')
+        return bcrypt.checkpw(attempt, hashed)
 
 class Usage:
 
